@@ -13,7 +13,7 @@ import {
 } from "./utils";
 import { AccessTypes, NftType } from "./types";
 
-describe.only("Owners ERC721", function () {
+describe("Owners ERC721", function () {
   const TOKEN_ID = 132;
   const INITIAL_PAYER_BALANCE = 1000000000;
   const ACCESS_COST = 100;
