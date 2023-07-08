@@ -31,8 +31,11 @@ describe("Pay for Access Flow", function () {
   let ownersNFT: Contract;
   let stableCoin: Contract;
   let contentContract721: Contract;
+  // owner token mint params
+  let owners = [];
+  let percentages = [6000, 4000];
 
-  before(async function () {
+  beforeEach(async function () {
     [admin, payer, collectionOwner, paymentsOwner, accessor] =
       await ethers.getSigners();
 
@@ -60,12 +63,13 @@ describe("Pay for Access Flow", function () {
     await stableCoin.connect(payer).approve(pm.address, INITIAL_PAYER_BALANCE);
 
     // set owner of a token content contract
+    owners = [collectionOwner.address, paymentsOwner.address];
     await ownersNFT
       .connect(collectionOwner)
-      .setOwner(TOKEN_ID, paymentsOwner.address);
+      .setOwners(TOKEN_ID, owners, percentages);
 
     // set price to access a token
-    await setPriceOfAccess(accessNFT, paymentsOwner, TOKEN_ID, ACCESS_COST);
+    await setPriceOfAccess(accessNFT, collectionOwner, TOKEN_ID, ACCESS_COST);
   });
 
   it("log deployed addresses", async function () {
@@ -120,8 +124,8 @@ describe("Pay for Access Flow", function () {
     await contentContract721.mint(collectionOwner.address, tokenId);
     await ownersNFT
       .connect(collectionOwner)
-      .setOwner(tokenId, paymentsOwner.address);
-    await setPriceOfAccess(accessNFT, paymentsOwner, tokenId, ACCESS_COST);
+      .setOwners(tokenId, owners, percentages);
+    await setPriceOfAccess(accessNFT, collectionOwner, tokenId, ACCESS_COST);
     const tx = await pf
       .connect(payer)
       .payFor(tokenId, AccessTypes.HOURLY_VIEW, accessor.address);
@@ -139,20 +143,23 @@ describe("Pay for Access Flow", function () {
   });
 
   it("successfully increments the amount redeemable by the owner through the PaymentFacilitator", async function () {
-    const redeemableByOwnerBefore = await pf.getOwnerBalance(
-      paymentsOwner.address
+    const redeemableByOwnerBefore = await pf.getWithdrawableBalance(
+      paymentsOwner.address,
+      TOKEN_ID
     );
     const tx = await pf.connect(payer).pay(TOKEN_ID, AccessTypes.HOURLY_VIEW);
     expect(tx).to.have.property("hash");
     expect(tx).to.have.property("to", pf.address);
     const priceToAccess = await accessNFT.getPrice(TOKEN_ID);
-    const redeemableByOwnerAfter = await pf.getOwnerBalance(
-      paymentsOwner.address
+    const redeemableByOwnerAfter = await pf.getWithdrawableBalance(
+      paymentsOwner.address,
+      TOKEN_ID
     );
     expect(priceToAccess).to.be.gt(0);
     expect(redeemableByOwnerAfter).to.be.gt(0);
+    // payments owner has 40% stake so expect 40% of priceToAccess
     expect(redeemableByOwnerAfter.sub(redeemableByOwnerBefore)).to.equal(
-      priceToAccess
+      priceToAccess * 0.4
     );
   });
 
@@ -162,8 +169,8 @@ describe("Pay for Access Flow", function () {
     await contentContract721.mint(collectionOwner.address, tokenId);
     await ownersNFT
       .connect(collectionOwner)
-      .setOwner(tokenId, paymentsOwner.address);
-    await setPriceOfAccess(accessNFT, paymentsOwner, tokenId, ACCESS_COST);
+      .setOwners(tokenId, owners, percentages);
+    await setPriceOfAccess(accessNFT, collectionOwner, tokenId, ACCESS_COST);
     const tx = await pf
       .connect(payer)
       .payFor(tokenId, AccessTypes.HOURLY_VIEW, accessor.address);
@@ -194,8 +201,8 @@ describe("Pay for Access Flow", function () {
     await contentContract721.mint(collectionOwner.address, tokenId);
     await ownersNFT
       .connect(collectionOwner)
-      .setOwner(tokenId, paymentsOwner.address);
-    await setPriceOfAccess(accessNFT, paymentsOwner, tokenId, ACCESS_COST);
+      .setOwners(tokenId, owners, percentages);
+    await setPriceOfAccess(accessNFT, collectionOwner, tokenId, ACCESS_COST);
     const tx = await pf
       .connect(payer)
       .payFor(tokenId, AccessTypes.HOURLY_VIEW, accessor.address);
@@ -213,11 +220,10 @@ describe("Pay for Access Flow", function () {
     await contentContract721.mint(collectionOwner.address, tokenId);
     await ownersNFT
       .connect(collectionOwner)
-      .setOwner(tokenId, paymentsOwner.address);
-    await setPriceOfAccess(accessNFT, paymentsOwner, tokenId, ACCESS_COST);
+      .setOwners(tokenId, owners, percentages);
+    await setPriceOfAccess(accessNFT, collectionOwner, tokenId, ACCESS_COST);
 
-    // set supply limit (must be set by the paymentsOwner account)
-    await accessNFT.connect(paymentsOwner).setSupplyLimit(tokenId, 1);
+    await accessNFT.connect(collectionOwner).setSupplyLimit(tokenId, 1);
 
     const tx = await pf
       .connect(payer)
@@ -227,7 +233,7 @@ describe("Pay for Access Flow", function () {
     // pay for the payer account which would have a balance of 0
     await expect(
       pf.connect(payer).pay(tokenId, AccessTypes.HOURLY_VIEW)
-    ).to.be.revertedWith("Failed to mint Access token");
+    ).to.be.revertedWith("PaymentFacilitator: access-mint-failed");
   });
 
   it("reverts if trying to set supply cap of an Access NFT token below the current supply", async function () {
@@ -238,8 +244,8 @@ describe("Pay for Access Flow", function () {
     await contentContract721.mint(collectionOwner.address, tokenId);
     await ownersNFT
       .connect(collectionOwner)
-      .setOwner(tokenId, paymentsOwner.address);
-    await setPriceOfAccess(accessNFT, paymentsOwner, tokenId, ACCESS_COST);
+      .setOwners(tokenId, owners, percentages);
+    await setPriceOfAccess(accessNFT, collectionOwner, tokenId, ACCESS_COST);
 
     const tx = await pf
       .connect(payer)
@@ -249,15 +255,12 @@ describe("Pay for Access Flow", function () {
     // pay for the payer account which would have a balance of 0
     await pf.connect(payer).pay(tokenId, AccessTypes.HOURLY_VIEW);
 
-    // set supply limit (must be set by the paymentsOwner account)
     await expect(
-      accessNFT.connect(paymentsOwner).setSupplyLimit(tokenId, 1)
-    ).to.be.revertedWith(
-      "Set Supply error: limit can not be below current supply"
-    );
+      accessNFT.connect(collectionOwner).setSupplyLimit(tokenId, 1)
+    ).to.be.revertedWith("Access: limit-below-current-supply");
   });
 
-  it("reverts if account trying to set supply cap of an Access NFT token is not the payment owner of the token", async function () {
+  it("fails to set supply limit if caller is not owner/approved on content", async function () {
     // use a unique token to ensure the timestamp starts at 0
     const tokenId = 1006;
     expect(await accessNFT.totalSupply(tokenId)).to.be.equal(0);
@@ -265,40 +268,33 @@ describe("Pay for Access Flow", function () {
     await contentContract721.mint(collectionOwner.address, tokenId);
     await ownersNFT
       .connect(collectionOwner)
-      .setOwner(tokenId, paymentsOwner.address);
-    await setPriceOfAccess(accessNFT, paymentsOwner, tokenId, ACCESS_COST);
+      .setOwners(tokenId, owners, percentages);
+    await setPriceOfAccess(accessNFT, collectionOwner, tokenId, ACCESS_COST);
 
     await expect(
-      accessNFT.connect(collectionOwner).setSupplyLimit(tokenId, 1)
-    ).to.be.revertedWith("Set Supply error: must be payments owner");
+      accessNFT.connect(paymentsOwner).setSupplyLimit(tokenId, 1)
+    ).to.be.revertedWith("Access: must-be-content-owner-or-approved");
   });
 
   it("reverts when the paying account does not have enough funds for access", async function () {
+    const balance = await stableCoin.balanceOf(payer.address);
     await stableCoin.connect(payer).approve(pm.address, 1000000000000);
-    const newPrice = 999999999;
-    await setPriceOfAccess(accessNFT, paymentsOwner, TOKEN_ID, newPrice);
+    const newPrice = balance + 1;
+    await setPriceOfAccess(accessNFT, collectionOwner, TOKEN_ID, newPrice);
     await expect(
       pf.connect(payer).pay(TOKEN_ID, AccessTypes.HOURLY_VIEW)
     ).to.be.revertedWith("ERC20: transfer amount exceeds balance");
-    // change price back to default
-    await setPriceOfAccess(accessNFT, paymentsOwner, TOKEN_ID, ACCESS_COST);
-    // change allowance back
-    await stableCoin.connect(payer).approve(pm.address, INITIAL_PAYER_BALANCE);
   });
 
   it("reverts when the PaymentManager contract is not approved to access enough funds", async function () {
     const newPrice = 1000000000000;
-    await setPriceOfAccess(accessNFT, paymentsOwner, TOKEN_ID, newPrice);
+    await setPriceOfAccess(accessNFT, collectionOwner, TOKEN_ID, newPrice);
     await expect(
       pf.connect(payer).pay(TOKEN_ID, AccessTypes.HOURLY_VIEW)
     ).to.be.revertedWith("ERC20: insufficient allowance");
-    // change price back to default
-    await setPriceOfAccess(accessNFT, paymentsOwner, TOKEN_ID, ACCESS_COST);
   });
 
   it("reverts when trying to pay through a deactivated PaymentFacilitator", async function () {
-    // be sure to withdraw all funds which can be withdrawn from the PF
-    await pf.connect(paymentsOwner).withdraw();
     await pm.connect(admin).setFacilitator(pf.address, false);
     await expect(
       pf.connect(payer).pay(TOKEN_ID, AccessTypes.HOURLY_VIEW)
@@ -307,14 +303,5 @@ describe("Pay for Access Flow", function () {
     );
     // re-activate PF
     await pm.connect(admin).setFacilitator(pf.address, true);
-  });
-
-  it("reverts if owner is not set for the tokenId being paid for", async function () {
-    // use a unique token to ensure the owner has never been set
-    const tokenId = 1007;
-    await contentContract721.mint(collectionOwner.address, tokenId);
-    await expect(
-      pf.connect(accessor).pay(tokenId, AccessTypes.HOURLY_VIEW)
-    ).to.be.revertedWith("Payment error: owner must be set");
   });
 });

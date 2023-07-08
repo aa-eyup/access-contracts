@@ -53,8 +53,8 @@ contract Access is ERC1155Supply {
         prices[_id] = _price;
     }
 
-    function setSupplyLimit(uint256 _id, uint256 _limit) external {
-        require(_limit > totalSupply(_id), "Set Supply error: limit can not be below current supply");
+    function setSupplyLimit(uint256 _id, uint256 _limit) external onlyContentOwner(_id) {
+        require(_limit > totalSupply(_id), "Access: limit-below-current-supply");
         supplyLimit[_id] = _limit;
     }
 
@@ -76,7 +76,7 @@ contract Access is ERC1155Supply {
         // check owner or is approved
         address owner = content.ownerOf(_id);
         bool isApproved = content.isApprovedForAll(owner, msg.sender);
-        require(msg.sender == owner || isApproved, "Access: must be approved or owner on Owners");
+        require(msg.sender == owner || isApproved, "Access: must-be-content-owner-or-approved");
         _;
     }
 }
