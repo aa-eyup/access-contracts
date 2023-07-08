@@ -4,6 +4,8 @@ pragma solidity 0.8.17;
 import "../../interfaces/IConfig.sol";
 import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155Supply.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+
 
 /**
  * @title Access ERC1155 Contract
@@ -47,16 +49,11 @@ contract Access is ERC1155Supply {
         previousPaymentTimestamp[_accessor][_id] = block.timestamp;
     }
 
-    function setPrice(uint256 _id, uint256 _price) external {
-        IERC721 owners = IERC721(config.getOwnersContract());
-        address owner = getPaymentOwner(_id);
-        bool isApproved = owners.isApprovedForAll(owner, msg.sender);
-        require(msg.sender == owner || isApproved);
+    function setPrice(uint256 _id, uint256 _price) external onlyContentOwner(_id) {
         prices[_id] = _price;
     }
 
     function setSupplyLimit(uint256 _id, uint256 _limit) external {
-        require(getPaymentOwner(_id) == msg.sender, "Set Supply error: must be payments owner");
         require(_limit > totalSupply(_id), "Set Supply error: limit can not be below current supply");
         supplyLimit[_id] = _limit;
     }
@@ -69,13 +66,17 @@ contract Access is ERC1155Supply {
         return previousPaymentTimestamp[_accessor][_id];
     }
 
-    function getPaymentOwner(uint256 _id) private view returns(address) {
-        IERC721 owners = IERC721(config.getOwnersContract());
-        return owners.ownerOf(_id);
-    }
-
     modifier onlyFacilitator() {
         require(msg.sender == config.getPaymentFacilitator());
+        _;
+    }
+
+    modifier onlyContentOwner(uint256 _id) {
+        IERC721 content = IERC721(config.getContentNFT());
+        // check owner or is approved
+        address owner = content.ownerOf(_id);
+        bool isApproved = content.isApprovedForAll(owner, msg.sender);
+        require(msg.sender == owner || isApproved, "Access: must be approved or owner on Owners");
         _;
     }
 }

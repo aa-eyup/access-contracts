@@ -5,6 +5,8 @@ import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import "../../interfaces/IPaymentManager.sol";
 import "../../interfaces/IConfig.sol";
 
+import "hardhat/console.sol";
+
 /**
  * @title PaymentFacilitator contract
  * @notice Serves as access point to deposit/withdraw funds.
@@ -20,7 +22,7 @@ contract PaymentFacilitator {
     IPaymentManager private paymentManager;
 
     // track balance redeemable by all owners of a token
-    mapping(uint256 => uint256) balanceRedeemableForToken;
+    mapping(uint256 => uint256) balanceWithdrawableForToken;
 
     /**
      * @dev Emitted when tokens are transferred from `payer` to the PaymentManager contract to gain access to token `id` on the `accessNFT` contract
@@ -64,12 +66,12 @@ contract PaymentFacilitator {
         // PaymentManager is responsible for pulling funds
         uint256 amountPaid = paymentManager.pay(_id, _payer, address(accessNFT));
 
-        balanceRedeemableForToken[_id] += amountPaid;
+        balanceWithdrawableForToken[_id] += amountPaid;
 
         uint256 balance = accessNFT.balanceOf(_accessor, _id);
         if (!(balance > 0)) {
             (bool mintSuccess, ) = address(accessNFT).call(abi.encodeWithSignature("mint(address,uint256)", _accessor, _id));
-            require(mintSuccess, "Failed to mint Access token");
+            require(mintSuccess, "PaymentFacilitator: Access mint failed");
         }
         (bool setTimestampSuccess, ) = address(accessNFT).call(abi.encodeWithSignature("setPreviousPaymentTime(uint256,address)", _id, _accessor));
         require(setTimestampSuccess, "Failed to set previous payment timestamp");
@@ -95,21 +97,30 @@ contract PaymentFacilitator {
         uint256 balance = IERC1155(owners).balanceOf(msg.sender, _id);
 
         (bool totalSupplySuccess, bytes memory totalSupplyBytes) = owners.staticcall(abi.encodeWithSignature("totalSupply(uint256)", _id));
-        require(totalSupplySuccess, "total-tupply-unobtained");
-        uint totalSupply = abi.decode(totalSupplyButes, (uint256));
+        require(totalSupplySuccess, "PaymentFacilitator: total-supply-unobtained");
+        uint totalSupply = abi.decode(totalSupplyBytes, (uint256));
 
-        uint256 amountToWithdraw = balanceRedeemableForToken[_id] * balance / totalSupply;
+        uint256 amountToWithdraw = balanceWithdrawableForToken[_id] * balance / totalSupply;
 
-        require(amountToWithdraw > 0, "Withdrawal error: Zero redeemable amount");
+        require(amountToWithdraw > 0, "PaymentFacilitator: zero-withdrawable-amount");
 
-        ownerBalances[msg.sender] -= amountToWithdraw;
+        balanceWithdrawableForToken[_id] -= amountToWithdraw;
         paymentManager.withdraw(msg.sender, amountToWithdraw);
         emit Withdraw(msg.sender, amountToWithdraw);
 
         return (amountToWithdraw);
     }
 
-    function getOwnerBalance(address _owner) external view returns(uint256) {
-        return ownerBalances[_owner];
+    function getWithdrawableBalance(address _owner, uint256 _id) external view returns(uint256) {
+        address owners = config.getOwnersContract();
+        // balance of owners ERC1155 represents share of ownership
+        uint256 balance = IERC1155(owners).balanceOf(_owner, _id);
+
+        (bool totalSupplySuccess, bytes memory totalSupplyBytes) = owners.staticcall(abi.encodeWithSignature("totalSupply(uint256)", _id));
+        require(totalSupplySuccess, "PaymentFacilitator: total-supply-call-failed");
+        uint totalSupply = abi.decode(totalSupplyBytes, (uint256));
+
+        uint256 amount = balanceWithdrawableForToken[_id] * balance / totalSupply;
+        return amount;
     }
 }
