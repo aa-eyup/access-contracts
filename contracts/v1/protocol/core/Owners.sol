@@ -22,9 +22,8 @@ contract Owners is ERC1155Supply {
     IConfig private config;
     // 1 token of this ERC1155 = 1 basis point of ownership
     uint16 public immutable FULL_OWNERSHIP_PERCENTAGE = 10000;
-    // owners.length must equal FULL_OWNERSHIP_PERCENTAGE
-    // up to 1 address per basis point
-    mapping(uint256 => address[10000]) public owners;
+    // use dynamic array to avoid over allocating space
+    mapping(uint256 => address[]) public owners;
 
     constructor(address _contentConfig) ERC1155("") {
         config = IConfig(_contentConfig);
@@ -58,12 +57,12 @@ contract Owners is ERC1155Supply {
             // mint the token which represents ownership percentage
             _mint(_owners[i], _id, _ownershipPercentages[i], "");
             // set owner into state
-            owners[_id][i] = _owners[i];
+            owners[_id].push(_owners[i]);
         }
         require(percentageTotal == FULL_OWNERSHIP_PERCENTAGE, "Owners: invalid-ownership-sum");
     }
 
-    function getOwners(uint256 _id) public view returns (address[10000] memory) {
+    function getOwners(uint256 _id) public view returns (address[] memory) {
         return owners[_id];
     }
 
@@ -93,7 +92,7 @@ contract Owners is ERC1155Supply {
         int16 iFrom = -1;
         int16 firstZeroSlot = -1;
 
-        address[10000] storage tokenOwners = owners[_id];
+        address[] storage tokenOwners = owners[_id];
 
         for (uint16 i = 0; i < tokenOwners.length; i++) {
             if (firstZeroSlot < 0 && tokenOwners[i] == address(0)) {
@@ -113,10 +112,11 @@ contract Owners is ERC1155Supply {
         require(iFrom >= 0, "Owners: from-account-not-owner");
 
         if (balanceOf(from, _id) == 0) {
-            tokenOwners[uint16(iFrom)] = address(0);
+            tokenOwners[uint16(iFrom)] = tokenOwners[tokenOwners.length - 1];
+            tokenOwners.pop();
         }
         if (iTo < 0) {
-            tokenOwners[uint16(firstZeroSlot)] = to;
+            tokenOwners.push(to);
         }
     }
 
