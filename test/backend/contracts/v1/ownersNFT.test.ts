@@ -189,6 +189,92 @@ describe("Owners ERC721", function () {
       ).to.equal(5000);
     });
 
+    it("should update owners when from is no longer owner", async function () {
+      const owners = [collectionOwner.address, paymentsOwner.address];
+      const percentages = [6000, 4000];
+      await ownersNFT
+        .connect(collectionOwner)
+        .setOwners(TOKEN_ID, owners, percentages);
+      expect(
+        await ownersNFT.balanceOf(collectionOwner.address, TOKEN_ID)
+      ).to.equal(6000);
+      expect(
+        await ownersNFT.balanceOf(paymentsOwner.address, TOKEN_ID)
+      ).to.equal(4000);
+
+      await ownersNFT
+        .connect(collectionOwner)
+        .safeTransferFrom(
+          collectionOwner.address,
+          paymentsOwner.address,
+          TOKEN_ID,
+          6000,
+          "0x00"
+        );
+      expect(
+        await ownersNFT.balanceOf(paymentsOwner.address, TOKEN_ID)
+      ).to.equal(10000);
+      expect(
+        await ownersNFT.balanceOf(collectionOwner.address, TOKEN_ID)
+      ).to.equal(0);
+
+      const ownersFromContract = await ownersNFT.getOwners(TOKEN_ID);
+      // NOTICE: this is an expensive check
+      expect(
+        ownersFromContract.indexOf(collectionOwner.address.toUpperCase())
+      ).to.equal(-1);
+    });
+
+    it("should update owners when to is a new owner", async function () {
+      const owners = [collectionOwner.address, paymentsOwner.address];
+      const percentages = [6000, 4000];
+      await ownersNFT
+        .connect(collectionOwner)
+        .setOwners(TOKEN_ID, owners, percentages);
+      expect(
+        await ownersNFT.balanceOf(collectionOwner.address, TOKEN_ID)
+      ).to.equal(6000);
+      expect(
+        await ownersNFT.balanceOf(paymentsOwner.address, TOKEN_ID)
+      ).to.equal(4000);
+
+      await ownersNFT
+        .connect(collectionOwner)
+        .safeTransferFrom(
+          collectionOwner.address,
+          admin.address,
+          TOKEN_ID,
+          1000,
+          "0x00"
+        );
+      expect(
+        await ownersNFT.balanceOf(paymentsOwner.address, TOKEN_ID)
+      ).to.equal(4000);
+      expect(await ownersNFT.balanceOf(admin.address, TOKEN_ID)).to.equal(1000);
+      expect(
+        await ownersNFT.balanceOf(collectionOwner.address, TOKEN_ID)
+      ).to.equal(5000);
+
+      const ownersFromContract = await ownersNFT.getOwners(TOKEN_ID);
+
+      let senderFound = false;
+      let receiverFound = false;
+      for (let i = 0; i < ownersFromContract.length; i++) {
+        console.log(ownersFromContract[i].toUpperCase());
+        if (ownersFromContract[i] == collectionOwner.address) {
+          senderFound = true;
+        }
+
+        if (ownersFromContract[i] == admin.address) {
+          receiverFound = true;
+        }
+        if (senderFound && receiverFound) {
+          break;
+        }
+      }
+      expect(senderFound && receiverFound).to.equal(true);
+    });
+
     it("fails to transfer Owner token if current sender has a redeemable balance", async function () {
       const owners = [collectionOwner.address, paymentsOwner.address];
       const percentages = [6000, 4000];

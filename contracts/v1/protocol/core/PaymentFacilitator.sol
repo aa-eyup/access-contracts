@@ -42,7 +42,7 @@ contract PaymentFacilitator {
     function getWithdrawableBalance(address _owner, uint256 _id) public view returns(uint256) {
         address owners = config.getOwnersContract();
         // balance of owners ERC1155 represents share of ownership
-        uint256 balance = IERC1155(owners).balanceOf(_owner, _id);
+        uint256 ownershipBalance = IERC1155(owners).balanceOf(_owner, _id);
 
         (bool totalSupplySuccess, bytes memory totalSupplyBytes) = owners.staticcall(abi.encodeWithSignature("totalSupply(uint256)", _id));
 
@@ -50,7 +50,7 @@ contract PaymentFacilitator {
 
         uint totalSupply = abi.decode(totalSupplyBytes, (uint256));
 
-        uint256 amount = balanceWithdrawableForToken[_id] * balance / totalSupply;
+        uint256 amount = balanceWithdrawableForToken[_id] * ownershipBalance / totalSupply;
         return amount;
     }
 
@@ -63,10 +63,12 @@ contract PaymentFacilitator {
     }
 
     /**
-     * @dev Creates a transfer from the `_payer` to the PaymentManager where the funds are earmarked for owners of `_id` on the Owners ERC1155 contract.
+     * @dev Creates a transfer from the `_payer` to the PaymentManager where the funds are earmarked for calling PaymentFacilitator contract.
+     *
      * The price to pay is looked up on the accessNFT.
      * If the balance of the `_accessor` for the given `_id` on the accessNFT is not greater than 0,
      * then a token with id `_id` will be minted to the `_accessor`.
+     *
      * A timestamp will be set to reflect the time of payment for the `_accessor` and then given `_id` on the respective accessNFT.
      *
      * Emits a {AccessPayment} event.
@@ -81,6 +83,9 @@ contract PaymentFacilitator {
         // PaymentManager is responsible for pulling funds
         uint256 amountPaid = paymentManager.pay(_id, _payer, address(accessNFT));
 
+        // TODO earmark for each owner???
+        // call owners contract for owners and amounts
+        // update getWithdrawableBalance()
         balanceWithdrawableForToken[_id] += amountPaid;
 
         uint256 balance = accessNFT.balanceOf(_accessor, _id);

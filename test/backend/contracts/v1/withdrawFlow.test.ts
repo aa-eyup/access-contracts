@@ -31,6 +31,9 @@ describe("Withdraw Flow", function () {
   let ownersNFT: Contract;
   let stableCoin: Contract;
   let contentContract: Contract;
+  // owner token mint params
+  let owners = [];
+  let percentages = [6000, 4000];
 
   before(async function () {
     [admin, payer, collectionOwner, paymentsOwner, accessor] =
@@ -61,12 +64,13 @@ describe("Withdraw Flow", function () {
     await stableCoin.connect(payer).approve(pm.address, INITIAL_PAYER_BALANCE);
 
     // set owner of a token content contract
+    owners = [paymentsOwner.address, collectionOwner.address];
     await ownersNFT
       .connect(collectionOwner)
-      .setOwner(TOKEN_ID, paymentsOwner.address);
+      .setOwners(TOKEN_ID, owners, percentages);
 
     // set price to access a token
-    await setPriceOfAccess(accessNFT, paymentsOwner, TOKEN_ID, ACCESS_COST);
+    await setPriceOfAccess(accessNFT, collectionOwner, TOKEN_ID, ACCESS_COST);
   });
 
   it("log deployed addresses", async function () {
@@ -89,18 +93,36 @@ describe("Withdraw Flow", function () {
     );
     expect(paymentOwnerBalance).to.equal(0);
 
-    const amountRedeemable = await pf.getOwnerBalance(paymentsOwner.address);
-    expect(amountRedeemable).to.equal(ACCESS_COST);
+    const amountRedeemable = await pf.getWithdrawableBalance(
+      paymentsOwner.address,
+      TOKEN_ID
+    );
 
-    // withdraw the funds as the account which was set as the "paymentsOwner" for 1 or more tokens
-    await pf.connect(paymentsOwner).withdraw();
+    const percentage =
+      percentages[
+        owners.findIndex((address) => address === paymentsOwner.address)
+      ] / 10000;
+
+    const expectedAmount = ACCESS_COST * percentage;
+
+    expect(amountRedeemable).to.equal(expectedAmount);
+
+    await pf.connect(paymentsOwner).withdraw(TOKEN_ID);
     const paymentOwnerBalancePostWithdraw = await stableCoin.balanceOf(
       paymentsOwner.address
     );
-    expect(paymentOwnerBalancePostWithdraw).to.equal(ACCESS_COST);
-    const amountRedeemablePostWithdraw = await pf.getOwnerBalance(
-      paymentsOwner.address
+
+    expect(paymentOwnerBalancePostWithdraw).to.equal(expectedAmount);
+
+    const amountRedeemablePostWithdraw = await pf.getWithdrawableBalance(
+      paymentsOwner.address,
+      TOKEN_ID
     );
+
+    // TODO: need to make withdrawals idempotent
+    // current if an owner withdraws, the overall pool shrinks but they still can
+    // withdraw a portion of that smaller pool
+
     expect(amountRedeemablePostWithdraw).to.equal(0);
     const pmBalancePostWithdraw = await stableCoin.balanceOf(pm.address);
     expect(pmBalancePostWithdraw.toNumber()).to.equal(0);
@@ -108,16 +130,16 @@ describe("Withdraw Flow", function () {
 
   it("reverts if the withdrawing account is an owner of any token", async function () {
     // the withdrawing account must own the tokenId on the Owners NFT (not the collection NFT)
-    await expect(pf.connect(collectionOwner).withdraw()).to.be.revertedWith(
-      "Withdrawal error: 0 funds available"
-    );
+    await expect(
+      pf.connect(collectionOwner).withdraw(TOKEN_ID)
+    ).to.be.revertedWith("PaymentFacilitator: zero-withdrawable-amount");
   });
 
   it("reverts if the redeemable balance is 0", async function () {
     // no payment has been made
-    await expect(pf.connect(paymentsOwner).withdraw()).to.be.revertedWith(
-      "Withdrawal error: 0 funds available"
-    );
+    await expect(
+      pf.connect(paymentsOwner).withdraw(TOKEN_ID)
+    ).to.be.revertedWith("PaymentFacilitator: zero-withdrawable-amount");
   });
 
   it("reverts when trying to deactivate facilitator with an account balance on the PaymentManager", async function () {
