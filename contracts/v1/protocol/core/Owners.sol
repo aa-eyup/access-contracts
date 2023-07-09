@@ -80,7 +80,7 @@ contract Owners is ERC1155Supply {
      * @param _id tokenId
      * @param _amount amount of payment to be split between owners
      */
-    function getOwnerShareOfPayment(address[] memory _owners, uint256 _id, uint256 _amount) public view returns (uint256[] memory) {
+    function getOwnerSharesOfPayment(address[] memory _owners, uint256 _id, uint256 _amount) public view returns (uint256[] memory) {
         uint256[] memory amounts = new uint256[](_owners.length);
         for (uint16 i = 0; i < _owners.length; i++) {
             amounts[i] = balanceOf(_owners[i], _id) * _amount / uint256(FULL_OWNERSHIP_PERCENTAGE);

@@ -119,20 +119,18 @@ describe("Withdraw Flow", function () {
       TOKEN_ID
     );
 
-    // TODO: need to make withdrawals idempotent
-    // current if an owner withdraws, the overall pool shrinks but they still can
-    // withdraw a portion of that smaller pool
-
     expect(amountRedeemablePostWithdraw).to.equal(0);
     const pmBalancePostWithdraw = await stableCoin.balanceOf(pm.address);
-    expect(pmBalancePostWithdraw.toNumber()).to.equal(0);
+    expect(pmBalancePostWithdraw.toNumber()).to.equal(
+      ACCESS_COST - expectedAmount
+    );
   });
 
-  it("reverts if the withdrawing account is an owner of any token", async function () {
+  it("reverts if the withdrawing account is not an owner of any token", async function () {
     // the withdrawing account must own the tokenId on the Owners NFT (not the collection NFT)
-    await expect(
-      pf.connect(collectionOwner).withdraw(TOKEN_ID)
-    ).to.be.revertedWith("PaymentFacilitator: zero-withdrawable-amount");
+    await expect(pf.connect(admin).withdraw(TOKEN_ID)).to.be.revertedWith(
+      "PaymentFacilitator: zero-withdrawable-amount"
+    );
   });
 
   it("reverts if the redeemable balance is 0", async function () {
@@ -149,12 +147,10 @@ describe("Withdraw Flow", function () {
     expect(tx).to.have.property("to", pf.address);
 
     const pmBalance = await stableCoin.balanceOf(pm.address);
-    expect(pmBalance.toNumber()).to.equal(ACCESS_COST);
+    expect(pmBalance.toNumber() > 0).to.equal(true);
 
     await expect(
       pm.connect(admin).setFacilitator(pf.address, false)
-    ).to.be.revertedWith(
-      "unable to deactivate a facilitator with a non-zero balance on the PaymentManager"
-    );
+    ).to.be.revertedWith("PaymentManager: non-zero-facilitator-balance");
   });
 });

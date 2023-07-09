@@ -27,7 +27,7 @@ contract PaymentManager is IPaymentManager, BaseRoleCheckerPausable {
         __BaseRoleCheckerPausable__init(_admin);
         stableCoin = IERC20(_stableCoinAddress);
     }
-    
+
     function pay(uint256 _tokenId, address _payer, address _accessNFT) external activeFacilitator returns(uint256) {
         // call on AccessNFT to check amount to pull
         (bool getPriceSuccess, bytes memory getPriceData) = _accessNFT.staticcall(abi.encodeWithSignature("getPrice(uint256)", _tokenId));
@@ -52,7 +52,7 @@ contract PaymentManager is IPaymentManager, BaseRoleCheckerPausable {
     function setFacilitator(address _facilitator, bool _active) external onlyAdmin {
         FacilitatorAccount storage account = facilitatorAccounts[_facilitator];
         if (!_active) {
-            require(account.balance == 0, "unable to deactivate a facilitator with a non-zero balance on the PaymentManager");
+            require(account.balance == 0, "PaymentManager: non-zero-facilitator-balance");
         }
         account.active = _active;
     }
@@ -62,11 +62,11 @@ contract PaymentManager is IPaymentManager, BaseRoleCheckerPausable {
     }
 
     function _doStableCoinTransfer(address _from, address _to, uint256 _amount) private returns(bool) {
-        require(_to != address(0), "can not transfer stable coin to 0 address");
+        require(_to != address(0), "PaymentManager: zero-to-address");
         if (_from == address(this)) {
             return stableCoin.transfer(_to, _amount);
         }
-        require(_from != address(0), "can not transfer stbale coin from 0 address");
+        require(_from != address(0), "PaymentManager: zero-from-address");
         return stableCoin.transferFrom(_from, _to, _amount);
     }
 

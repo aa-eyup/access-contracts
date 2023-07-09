@@ -5,8 +5,6 @@ import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import "../../interfaces/IPaymentManager.sol";
 import "../../interfaces/IConfig.sol";
 
-import "hardhat/console.sol";
-
 /**
  * @title PaymentFacilitator contract
  * @notice Serves as access point to deposit/withdraw funds.
@@ -21,8 +19,8 @@ contract PaymentFacilitator {
     IConfig private config;
     IPaymentManager private paymentManager;
 
-    // track balance redeemable by all owners of a token
-    mapping(uint256 => uint256) balanceWithdrawableForToken;
+    // tokenId => address => withdrawable amount
+    mapping(uint256 => mapping(address => uint256)) private withdrawable;
 
     /**
      * @dev Emitted when tokens are transferred from `payer` to the PaymentManager contract to gain access to token `id` on the `accessNFT` contract
@@ -39,19 +37,8 @@ contract PaymentFacilitator {
         paymentManager = IPaymentManager(_paymentManager);
     }
 
-    function getWithdrawableBalance(address _owner, uint256 _id) public view returns(uint256) {
-        address owners = config.getOwnersContract();
-        // balance of owners ERC1155 represents share of ownership
-        uint256 ownershipBalance = IERC1155(owners).balanceOf(_owner, _id);
-
-        (bool totalSupplySuccess, bytes memory totalSupplyBytes) = owners.staticcall(abi.encodeWithSignature("totalSupply(uint256)", _id));
-
-        require(totalSupplySuccess, "PaymentFacilitator: total-supply-call-failed");
-
-        uint totalSupply = abi.decode(totalSupplyBytes, (uint256));
-
-        uint256 amount = balanceWithdrawableForToken[_id] * ownershipBalance / totalSupply;
-        return amount;
+    function getWithdrawableBalance(address _account, uint256 _id) public view returns(uint256) {
+        return withdrawable[_id][_account];
     }
 
     function pay(uint256 _id, string memory _accessType) external returns(bool) {
@@ -80,13 +67,15 @@ contract PaymentFacilitator {
      */
     function _pay(uint256 _id, string memory _accessType, address _accessor, address _payer) private returns(bool) {
         IERC1155 accessNFT = IERC1155(config.getAccessNFT(_accessType));
+
         // PaymentManager is responsible for pulling funds
         uint256 amountPaid = paymentManager.pay(_id, _payer, address(accessNFT));
 
-        // TODO earmark for each owner???
-        // call owners contract for owners and amounts
-        // update getWithdrawableBalance()
-        balanceWithdrawableForToken[_id] += amountPaid;
+        (address[] memory tokenOwners, uint256[] memory share) = getAmountsForOwners(_id, amountPaid);
+        mapping(address => uint256) storage withdrawableForToken = withdrawable[_id];
+        for (uint16 i = 0; i < tokenOwners.length; i++) {
+            withdrawableForToken[tokenOwners[i]] += share[i];
+        }
 
         uint256 balance = accessNFT.balanceOf(_accessor, _id);
         if (!(balance > 0)) {
@@ -114,14 +103,36 @@ contract PaymentFacilitator {
      * - amount of funds withdrawable must be greater than 0
      */
     function withdraw(uint256 _id) external returns(uint256) {
-        uint256 amountToWithdraw = getWithdrawableBalance(msg.sender, _id);
+        address receiver = msg.sender;
+        uint256 amountToWithdraw = getWithdrawableBalance(receiver, _id);
 
         require(amountToWithdraw > 0, "PaymentFacilitator: zero-withdrawable-amount");
 
-        balanceWithdrawableForToken[_id] -= amountToWithdraw;
-        paymentManager.withdraw(msg.sender, amountToWithdraw);
-        emit Withdraw(msg.sender, amountToWithdraw);
+        withdrawable[_id][receiver] -= amountToWithdraw;
+
+        require(withdrawable[_id][receiver] == 0, "PaymentFacilitator: incomplete-withdrawal");
+
+        paymentManager.withdraw(receiver, amountToWithdraw);
+        emit Withdraw(receiver, amountToWithdraw);
 
         return (amountToWithdraw);
+    }
+
+    function getAmountsForOwners(uint256 _id, uint256 _amount) private view returns (address[] memory, uint256[] memory) {
+        address owners = config.getOwnersContract();
+
+        (bool getTokenOwnersSuccess, bytes memory tokenOwnersBytes) = owners.staticcall(abi.encodeWithSignature("getOwners(uint256)", _id));
+
+        require(getTokenOwnersSuccess, "PaymentFacilitator: failed-to-get-token-owners");
+
+        address[] memory tokenOwners = abi.decode(tokenOwnersBytes, (address[]));
+
+        (bool getPaymentSharesSuccess, bytes memory paymentShareBytes) = owners.staticcall(abi.encodeWithSignature("getOwnerSharesOfPayment(address[],uint256,uint256)", tokenOwners, _id, _amount));
+
+        require(getPaymentSharesSuccess, "PaymentFacilitator: failed-to-get-payment-shares");
+
+        uint256[] memory paymentShares = abi.decode(paymentShareBytes, (uint256[]));
+
+        return (tokenOwners, paymentShares);
     }
 }

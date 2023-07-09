@@ -308,7 +308,7 @@ describe("Owners ERC721", function () {
 
       const payment = 12020;
 
-      const amounts = await ownersNFT.getOwnerShareOfPayment(
+      const amounts = await ownersNFT.getOwnerSharesOfPayment(
         ownersFromContract,
         TOKEN_ID,
         payment
