@@ -260,7 +260,6 @@ describe("Owners ERC721", function () {
       let senderFound = false;
       let receiverFound = false;
       for (let i = 0; i < ownersFromContract.length; i++) {
-        console.log(ownersFromContract[i].toUpperCase());
         if (ownersFromContract[i] == collectionOwner.address) {
           senderFound = true;
         }
@@ -273,6 +272,59 @@ describe("Owners ERC721", function () {
         }
       }
       expect(senderFound && receiverFound).to.equal(true);
+    });
+
+    it("should return owner share for a given token and amount", async function () {
+      const owners = [collectionOwner.address, paymentsOwner.address];
+      const percentages = [6000, 4000];
+      await ownersNFT
+        .connect(collectionOwner)
+        .setOwners(TOKEN_ID, owners, percentages);
+      expect(
+        await ownersNFT.balanceOf(collectionOwner.address, TOKEN_ID)
+      ).to.equal(6000);
+      expect(
+        await ownersNFT.balanceOf(paymentsOwner.address, TOKEN_ID)
+      ).to.equal(4000);
+
+      await ownersNFT
+        .connect(collectionOwner)
+        .safeTransferFrom(
+          collectionOwner.address,
+          admin.address,
+          TOKEN_ID,
+          1000,
+          "0x00"
+        );
+      expect(
+        await ownersNFT.balanceOf(paymentsOwner.address, TOKEN_ID)
+      ).to.equal(4000);
+      expect(await ownersNFT.balanceOf(admin.address, TOKEN_ID)).to.equal(1000);
+      expect(
+        await ownersNFT.balanceOf(collectionOwner.address, TOKEN_ID)
+      ).to.equal(5000);
+
+      const ownersFromContract = await ownersNFT.getOwners(TOKEN_ID);
+
+      const payment = 12020;
+
+      const amounts = await ownersNFT.getOwnerShareOfPayment(
+        ownersFromContract,
+        TOKEN_ID,
+        payment
+      );
+
+      const balances = [];
+      for (let i = 0; i < ownersFromContract.length; i++) {
+        const balance = await ownersNFT.balanceOf(
+          ownersFromContract[i],
+          TOKEN_ID
+        );
+        // full owners would be 10000 tokens
+        balances.push((balance * payment) / 10000);
+      }
+
+      expect(amounts.map((b) => b.toNumber())).to.deep.equal(balances);
     });
 
     it("fails to transfer Owner token if current sender has a redeemable balance", async function () {

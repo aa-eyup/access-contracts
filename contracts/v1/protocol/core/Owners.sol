@@ -62,10 +62,33 @@ contract Owners is ERC1155Supply {
         require(percentageTotal == FULL_OWNERSHIP_PERCENTAGE, "Owners: invalid-ownership-sum");
     }
 
+     /**
+     * Returns an array of addresses which hold ERC1155 tokens for the given `_id`.
+     * The array is managed on mint and transfers (tokens can not be burned).
+     *
+     * @param _id tokenId
+     */
     function getOwners(uint256 _id) public view returns (address[] memory) {
         return owners[_id];
     }
 
+     /**
+     * Returns an array of amounts representing the fair share of the `_amount`.
+     * Index in `_owners` maps to the index in the output.
+     *
+     * @param _owners a list of accounts
+     * @param _id tokenId
+     * @param _amount amount of payment to be split between owners
+     */
+    function getOwnerShareOfPayment(address[] memory _owners, uint256 _id, uint256 _amount) public view returns (uint256[] memory) {
+        uint256[] memory amounts = new uint256[](_owners.length);
+        for (uint16 i = 0; i < _owners.length; i++) {
+            amounts[i] = balanceOf(_owners[i], _id) * _amount / uint256(FULL_OWNERSHIP_PERCENTAGE);
+        }
+        return amounts;
+    }
+
+    /** sender's withdrawable balance must be 0 to transfer ownership tokens */
     function safeTransferFrom(
         address from,
         address to,
